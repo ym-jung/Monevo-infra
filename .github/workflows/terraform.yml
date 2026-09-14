@@ -1,0 +1,92 @@
+name: terraform
+
+on:
+  pull_request:
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main, production]
+    paths:
+      - "terraform/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to apply
+        required: true
+        type: choice
+        options: [staging, prod]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  plan:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [staging, prod]
+    environment: ${{ matrix.environment }}
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ matrix.environment }}
+    env:
+      TF_VAR_cognito_issuer: ${{ vars.COGNITO_ISSUER }}
+      TF_VAR_cognito_app_client_id: ${{ vars.COGNITO_APP_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.0"
+          terraform_wrapper: false
+
+      - run: terraform fmt -check -recursive
+        working-directory: terraform
+
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - run: terraform validate
+
+      - run: terraform plan -input=false -lock-timeout=5m
+
+  apply:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.environment || (github.ref_name == 'production' && 'prod' || 'staging') }}
+    concurrency:
+      group: terraform-apply-${{ inputs.environment || (github.ref_name == 'production' && 'prod' || 'staging') }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform/envs/${{ inputs.environment || (github.ref_name == 'production' && 'prod' || 'staging') }}
+    env:
+      TF_VAR_cognito_issuer: ${{ vars.COGNITO_ISSUER }}
+      TF_VAR_cognito_app_client_id: ${{ vars.COGNITO_APP_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: "1.16.0"
+          terraform_wrapper: false
+
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+
+      - run: terraform apply -input=false -auto-approve -lock-timeout=5m

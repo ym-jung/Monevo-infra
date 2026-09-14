@@ -1,0 +1,86 @@
+name: monevo
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - internal
+
+  backend:
+    image: ghcr.io/${GH_OWNER}/monevo-api-jvm:${BACKEND_TAG:-latest}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      fx-service:
+        condition: service_started
+    environment:
+      DB_URL: ${DB_URL:-jdbc:postgresql://postgres:5432/${POSTGRES_DB}}
+      DB_USER: ${DB_USER:-${POSTGRES_USER}}
+      DB_PASSWORD: ${DB_PASSWORD:-${POSTGRES_PASSWORD}}
+      AWS_REGION: ${AWS_REGION}
+      COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID}
+      COGNITO_APP_CLIENT_ID: ${COGNITO_APP_CLIENT_ID}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      FX_SERVICE_URL: ${FX_SERVICE_URL:-http://fx-service:8000}
+      TZ: UTC
+      JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=75 -XX:+UseG1GC -Duser.timezone=UTC"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q '\"status\":\"UP\"'" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    expose:
+      - "8080"
+    networks:
+      - internal
+      - edge
+
+  fx-service:
+    image: ghcr.io/${GH_OWNER}/monevo-fx-service:${FX_TAG:-latest}
+    environment:
+      TZ: UTC
+    healthcheck:
+      test: [ "CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\"" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    expose:
+      - "8000"
+    networks:
+      - internal
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CF_TUNNEL_TOKEN:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - edge
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+    driver: bridge
+  edge:
+    driver: bridge

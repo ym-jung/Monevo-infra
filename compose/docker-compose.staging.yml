@@ -1,0 +1,22 @@
+name: monevo-stg
+
+services:
+  postgres:
+    container_name: monevo-stg-postgres
+    environment:
+      POSTGRES_DB: monevo_stg
+    restart: unless-stopped
+
+  backend:
+    container_name: monevo-stg-backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: staging
+
+  fx-service:
+    container_name: monevo-stg-fx-service
+    restart: unless-stopped
+
+  cloudflared:
+    container_name: monevo-stg-cloudflared
+    restart: unless-stopped

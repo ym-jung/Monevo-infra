@@ -1,0 +1,11 @@
+.env
+.env.*
+
+*.pem
+*.key
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+placeholder.zip
+backend.hcl

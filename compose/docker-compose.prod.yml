@@ -1,0 +1,29 @@
+name: monevo-prod
+
+services:
+  postgres:
+    profiles: [ "never" ]
+
+  backend:
+    container_name: monevo-prod-backend
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "10"
+
+  fx-service:
+    container_name: monevo-prod-fx-service
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  cloudflared:
+    container_name: monevo-prod-cloudflared
+    restart: unless-stopped
